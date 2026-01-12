@@ -1,0 +1,4 @@
+# Craps Simulator Dependencies
+# tkinter is included with Python standard library
+
+matplotlib>=3.7.0
