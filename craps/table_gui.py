@@ -100,6 +100,10 @@ class CrapsTableGUI:
         # Default OFF during come-out (standard casino rules)
         self.place_bets_working: bool = False
 
+        # Shooter mode - when ON, pass/don't pass can only be placed before point
+        # When OFF (non-shooter), can place pass/don't pass anytime
+        self.shooter_mode: bool = True
+
         # Betting spots on the table
         self.betting_spots: list[BettingSpot] = []
 
@@ -192,6 +196,15 @@ class CrapsTableGUI:
             width=10
         )
         clear_btn.pack(side=tk.RIGHT, padx=10)
+
+        # Shooter mode toggle
+        self.shooter_mode_var = tk.StringVar(value="Shooter: ON")
+        self.shooter_mode_btn = tk.Button(
+            top_frame, textvariable=self.shooter_mode_var, font=('Arial', 10),
+            bg='#00aa00', fg='white', command=self._toggle_shooter_mode,
+            width=12
+        )
+        self.shooter_mode_btn.pack(side=tk.RIGHT, padx=10)
 
         # Place bets working toggle
         self.place_working_var = tk.StringVar(value="Place Bets: OFF")
@@ -861,12 +874,15 @@ class CrapsTableGUI:
             return
 
         # Check betting rules
-        if spot.bet_type == 'pass' and self.game.is_point_phase:
-            self._log("Cannot place Pass Line bet after point is established")
-            return
-        if spot.bet_type == 'dont_pass' and self.game.is_point_phase:
-            self._log("Cannot place Don't Pass bet after point is established")
-            return
+        # In shooter mode, pass/don't pass can only be placed before point
+        # In non-shooter mode, can place anytime (betting on someone else's roll)
+        if self.shooter_mode:
+            if spot.bet_type == 'pass' and self.game.is_point_phase:
+                self._log("Cannot place Pass Line bet after point is established (Shooter mode)")
+                return
+            if spot.bet_type == 'dont_pass' and self.game.is_point_phase:
+                self._log("Cannot place Don't Pass bet after point is established (Shooter mode)")
+                return
         if spot.bet_type == 'come' and self.game.is_come_out:
             self._log("Cannot place Come bet during come-out roll")
             return
@@ -1053,7 +1069,8 @@ class CrapsTableGUI:
         # Convert chip placements to actual bets
         self._convert_chips_to_bets()
 
-        if not self.bet_manager.active_bets:
+        # In shooter mode, require bets. In non-shooter mode, allow watching without betting.
+        if self.shooter_mode and not self.bet_manager.active_bets and not self._get_total_bets_at_risk():
             self._log("Place some bets first!")
             return
 
@@ -1481,6 +1498,19 @@ class CrapsTableGUI:
         # Update the visual indicator on the table
         self._draw_place_bets_status()
 
+    def _toggle_shooter_mode(self):
+        """Toggle shooter mode on/off."""
+        self.shooter_mode = not self.shooter_mode
+
+        if self.shooter_mode:
+            self.shooter_mode_var.set("Shooter: ON")
+            self.shooter_mode_btn.configure(bg='#00aa00')  # Green when ON
+            self._log("Shooter mode ON - Pass/Don't Pass only before point")
+        else:
+            self.shooter_mode_var.set("Shooter: OFF")
+            self.shooter_mode_btn.configure(bg='#cc0000')  # Red when OFF
+            self._log("Shooter mode OFF - Can bet on others' rolls anytime")
+
     def _update_bankroll_display(self):
         """Update the bankroll display showing total, rack, and bets."""
         bets_on_table = self._get_total_bets_at_risk()
@@ -1554,13 +1584,24 @@ class CrapsTableGUI:
         self.graph_window.configure(bg='#1a0f2e')
 
         # Handle window close
-        def on_close():
-            self.graph_window = None
+        def on_graph_close():
+            try:
+                import matplotlib.pyplot as plt
+                if self.graph_fig:
+                    plt.close(self.graph_fig)
+            except Exception:
+                pass
             self.graph_fig = None
             self.graph_ax = None
             self.graph_canvas = None
+            if self.graph_window:
+                try:
+                    self.graph_window.destroy()
+                except Exception:
+                    pass
+            self.graph_window = None
 
-        self.graph_window.protocol("WM_DELETE_WINDOW", lambda: (on_close(), self.graph_window.destroy()) if self.graph_window else None)
+        self.graph_window.protocol("WM_DELETE_WINDOW", on_graph_close)
 
         # Create figure
         self.graph_fig, self.graph_ax = plt.subplots(figsize=(10, 6), facecolor='#1a0f2e')
