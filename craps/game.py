@@ -4,7 +4,10 @@ Core craps game logic - dice rolling, point system, and game state management.
 import random
 from enum import Enum
 from dataclasses import dataclass, field
-from typing import Optional, Callable
+from typing import Optional, Callable, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .dice_sequence import DiceProvider
 
 
 class GamePhase(Enum):
@@ -58,12 +61,19 @@ class CrapsGame:
     Main craps game controller handling game state and dice rolls.
     """
 
-    def __init__(self, rules: Optional[TableRules] = None):
+    def __init__(self, rules: Optional[TableRules] = None, dice_provider: Optional['DiceProvider'] = None):
         self.rules = rules or TableRules()
         self.phase = GamePhase.COME_OUT
         self.point: Optional[int] = None
         self.roll_history: list[DiceRoll] = []
         self.shooter_rolls: int = 0
+
+        # Dice provider for dependency injection (enables deterministic testing)
+        if dice_provider is None:
+            from .dice_sequence import RandomDiceProvider
+            self.dice_provider = RandomDiceProvider()
+        else:
+            self.dice_provider = dice_provider
 
         # Callbacks for game events
         self._on_roll_callbacks: list[Callable[[DiceRoll], None]] = []
@@ -73,8 +83,7 @@ class CrapsGame:
 
     def roll_dice(self) -> DiceRoll:
         """Roll the dice and process the result."""
-        die1 = random.randint(1, 6)
-        die2 = random.randint(1, 6)
+        die1, die2 = self.dice_provider.roll()
         roll = DiceRoll(die1, die2)
 
         self.roll_history.append(roll)

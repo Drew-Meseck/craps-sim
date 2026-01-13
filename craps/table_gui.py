@@ -80,6 +80,7 @@ class CrapsTableGUI:
         self.root = root
         self.root.title("Craps Simulator")
         self.root.configure(bg='#1a0f2e')
+        self.root.minsize(1050, 750)  # Set minimum window size to fit table
 
         # Game state
         self.rules = TableRules()
@@ -304,6 +305,14 @@ class CrapsTableGUI:
             width=12
         )
         graph_btn.pack(side=tk.LEFT, padx=10, pady=5)
+
+        # Strategy test button
+        test_btn = tk.Button(
+            bottom_frame, text="🎯 Test Strategies", font=('Arial', 10),
+            bg='#4a3366', fg='white', command=self._show_strategy_test,
+            width=14
+        )
+        test_btn.pack(side=tk.LEFT, padx=10, pady=5)
 
         # Game log
         log_frame = tk.LabelFrame(bottom_frame, text="Game Log",
@@ -862,6 +871,11 @@ class CrapsTableGUI:
                 # Remove the last chip placed
                 removed = spot.chips.pop()
                 self.bankroll += removed
+
+                # If no chips left, remove the corresponding bet from bet_manager
+                if not spot.chips:
+                    self._remove_bet_for_spot(spot)
+
                 self._update_bankroll_display()
                 self._redraw_chips()
                 self._log(f"Removed ${removed} chip from {spot.name}")
@@ -1359,6 +1373,48 @@ class CrapsTableGUI:
             return True
         return False
 
+    def _remove_bet_for_spot(self, spot: BettingSpot):
+        """Remove the bet object corresponding to a spot from bet_manager."""
+        # Remove matching bets from bet_manager.active_bets
+        if spot.bet_type == 'pass':
+            self.bet_manager.active_bets = [b for b in self.bet_manager.active_bets
+                                            if not isinstance(b, PassLineBet)]
+        elif spot.bet_type == 'dont_pass':
+            self.bet_manager.active_bets = [b for b in self.bet_manager.active_bets
+                                            if not isinstance(b, DontPassBet)]
+        elif spot.bet_type == 'pass_odds':
+            self.bet_manager.active_bets = [b for b in self.bet_manager.active_bets
+                                            if not isinstance(b, OddsBet)]
+        elif spot.bet_type == 'dont_pass_odds':
+            self.bet_manager.active_bets = [b for b in self.bet_manager.active_bets
+                                            if not isinstance(b, LayOddsBet)]
+        elif spot.bet_type == 'come':
+            self.bet_manager.active_bets = [b for b in self.bet_manager.active_bets
+                                            if not isinstance(b, ComeBet)]
+        elif spot.bet_type == 'dont_come':
+            self.bet_manager.active_bets = [b for b in self.bet_manager.active_bets
+                                            if not isinstance(b, DontComeBet)]
+        elif spot.bet_type == 'field':
+            self.bet_manager.active_bets = [b for b in self.bet_manager.active_bets
+                                            if not isinstance(b, FieldBet)]
+        elif spot.bet_type.startswith('place_'):
+            num = int(spot.bet_type.split('_')[1])
+            self.bet_manager.active_bets = [b for b in self.bet_manager.active_bets
+                                            if not (isinstance(b, PlaceBet) and b.number == num)]
+        elif spot.bet_type.startswith('hard_'):
+            num = int(spot.bet_type.split('_')[1])
+            self.bet_manager.active_bets = [b for b in self.bet_manager.active_bets
+                                            if not (isinstance(b, HardwayBet) and b.number == num)]
+        elif spot.bet_type == 'any_seven':
+            self.bet_manager.active_bets = [b for b in self.bet_manager.active_bets
+                                            if not isinstance(b, AnySevenBet)]
+        elif spot.bet_type == 'any_craps':
+            self.bet_manager.active_bets = [b for b in self.bet_manager.active_bets
+                                            if not isinstance(b, AnyCrapsBet)]
+        elif spot.bet_type == 'horn':
+            self.bet_manager.active_bets = [b for b in self.bet_manager.active_bets
+                                            if not isinstance(b, HornBet)]
+
     def _on_point_established(self, point: int):
         """Handle point establishment."""
         self.point_var.set(str(point))
@@ -1470,6 +1526,8 @@ class CrapsTableGUI:
             if spot.chips:
                 self.bankroll += spot.total_bet
                 spot.chips.clear()
+                # Remove corresponding bet from bet_manager
+                self._remove_bet_for_spot(spot)
                 cleared_any = True
 
         self._update_bankroll_display()
@@ -1620,6 +1678,11 @@ class CrapsTableGUI:
 
         # Initial draw
         self._update_graph()
+
+    def _show_strategy_test(self):
+        """Open the strategy testing window."""
+        from .strategy_test_gui import StrategyTestWindow
+        StrategyTestWindow(self.root)
 
     def _update_graph(self):
         """Update the graph with current data."""
