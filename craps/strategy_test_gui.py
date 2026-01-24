@@ -13,7 +13,8 @@ from .strategies import (
     PassLineWithOddsStrategy,
     IronCrossStrategy,
     DontPassStrategy,
-    Place68Strategy
+    Place68Strategy,
+    RegressAndPressStrategy
 )
 
 
@@ -48,6 +49,7 @@ class StrategyTestWindow:
             ("Iron Cross", IronCrossStrategy),
             ("Don't Pass + Lay", DontPassStrategy),
             ("Place 6 & 8", Place68Strategy),
+            ("Regress and Press", RegressAndPressStrategy),
         ]
 
         # Track which strategies are selected
