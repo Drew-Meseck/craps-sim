@@ -547,6 +547,9 @@ class BetManager:
         self.rules = rules
         self.active_bets: list[Bet] = []
         self.resolved_bets: list[tuple[Bet, BetResult]] = []
+        # Action tracking for house edge calculation
+        self.bet_action: dict[str, float] = {}  # bet_type -> total $ wagered
+        self.bet_house_edges: dict[str, float] = {}  # bet_type -> house_edge
 
     def place_bet(self, bet: Bet) -> bool:
         """Place a new bet. Returns True if successful."""
@@ -555,6 +558,10 @@ class BetManager:
         if bet.amount > self.rules.maximum_bet:
             return False
         self.active_bets.append(bet)
+        # Track action
+        bet_type = bet.name
+        self.bet_action[bet_type] = self.bet_action.get(bet_type, 0.0) + bet.amount
+        self.bet_house_edges[bet_type] = bet.house_edge
         return True
 
     def resolve_all(self, roll: DiceRoll, phase: GamePhase, point: Optional[int]) -> list[tuple[Bet, BetResult]]:
@@ -582,3 +589,27 @@ class BetManager:
         """Clear all bets."""
         self.active_bets.clear()
         self.resolved_bets.clear()
+
+    def get_weighted_house_edge(self) -> float:
+        """Calculate action-weighted house edge as a percentage."""
+        total_action = sum(self.bet_action.values())
+        if total_action == 0:
+            return 0.0
+        weighted_sum = sum(
+            action * self.bet_house_edges.get(bet_type, 0.0)
+            for bet_type, action in self.bet_action.items()
+        )
+        return weighted_sum / total_action
+
+    def get_action_summary(self) -> dict[str, float]:
+        """Return breakdown of total action by bet type."""
+        return dict(self.bet_action)
+
+    def get_total_action(self) -> float:
+        """Return total dollars wagered across all bet types."""
+        return sum(self.bet_action.values())
+
+    def reset_action_tracking(self) -> None:
+        """Reset action tracking (for new session)."""
+        self.bet_action.clear()
+        self.bet_house_edges.clear()

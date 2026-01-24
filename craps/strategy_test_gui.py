@@ -7,7 +7,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from typing import Optional
 
-from .strategy_runner import StrategyRunner, SimulationConfig
+from .strategy_runner import StrategyRunner, SimulationConfig, SessionRunner
 from .game import TableRules
 from .strategies import (
     PassLineWithOddsStrategy,
@@ -57,9 +57,13 @@ class StrategyTestWindow:
 
         # Results
         self.results = None
+        self.session_results = None  # For session mode
         self.fig = None
         self.ax = None
         self.canvas = None
+
+        # Mode tracking
+        self.session_mode = False
 
         self._build_ui()
 
@@ -102,58 +106,107 @@ class StrategyTestWindow:
             bg='#1a0f2e', fg='white', font=('Arial', 10, 'bold')
         ).grid(row=0, column=0, columnspan=2, sticky='w', pady=(0, 10))
 
-        # Table Minimum
+        # Simulation Mode - use radio buttons to avoid dropdown issues
+        tk.Label(
+            right_frame, text="Simulation Mode:",
+            bg='#1a0f2e', fg='white', font=('Arial', 9)
+        ).grid(row=1, column=0, sticky='w', pady=5)
+        self.mode_var = tk.StringVar(value="continuous")
+        mode_frame = tk.Frame(right_frame, bg='#1a0f2e')
+        mode_frame.grid(row=1, column=1, sticky='w', padx=(10, 0), pady=5)
+        for mode_val, mode_text in [('continuous', 'Continuous'), ('session', 'Session')]:
+            rb = tk.Radiobutton(
+                mode_frame, text=mode_text, variable=self.mode_var, value=mode_val,
+                bg='#1a0f2e', fg='white', selectcolor='#2d1b4e',
+                activebackground='#1a0f2e', activeforeground='white',
+                font=('Arial', 9), command=self._on_mode_changed
+            )
+            rb.pack(side=tk.LEFT, padx=(0, 10))
+
+        # Table Minimum - use radio buttons
         tk.Label(
             right_frame, text="Table Minimum:",
             bg='#1a0f2e', fg='white', font=('Arial', 9)
-        ).grid(row=1, column=0, sticky='w', pady=5)
+        ).grid(row=2, column=0, sticky='w', pady=5)
         self.table_min_var = tk.StringVar(value="5")
-        table_min_combo = ttk.Combobox(
-            right_frame, textvariable=self.table_min_var,
-            values=['5', '10', '15', '25'],
-            width=12, font=('Arial', 9), state='readonly'
-        )
-        table_min_combo.grid(row=1, column=1, sticky='w', padx=(10, 0), pady=5)
+        table_min_frame = tk.Frame(right_frame, bg='#1a0f2e')
+        table_min_frame.grid(row=2, column=1, sticky='w', padx=(10, 0), pady=5)
+        for val in ['5', '10', '15', '25']:
+            rb = tk.Radiobutton(
+                table_min_frame, text=f'${val}', variable=self.table_min_var, value=val,
+                bg='#1a0f2e', fg='white', selectcolor='#2d1b4e',
+                activebackground='#1a0f2e', activeforeground='white',
+                font=('Arial', 9)
+            )
+            rb.pack(side=tk.LEFT, padx=(0, 5))
 
         # Bankroll
         tk.Label(
             right_frame, text="Starting Bankroll:",
             bg='#1a0f2e', fg='white', font=('Arial', 9)
-        ).grid(row=2, column=0, sticky='w', pady=5)
+        ).grid(row=3, column=0, sticky='w', pady=5)
         self.bankroll_var = tk.StringVar(value="1000")
         tk.Entry(
             right_frame, textvariable=self.bankroll_var,
             width=15, font=('Arial', 9)
-        ).grid(row=2, column=1, sticky='w', padx=(10, 0), pady=5)
-
-        # Number of rolls
-        tk.Label(
-            right_frame, text="Number of Rolls:",
-            bg='#1a0f2e', fg='white', font=('Arial', 9)
-        ).grid(row=3, column=0, sticky='w', pady=5)
-        self.rolls_var = tk.StringVar(value="1000")
-        tk.Entry(
-            right_frame, textvariable=self.rolls_var,
-            width=15, font=('Arial', 9)
         ).grid(row=3, column=1, sticky='w', padx=(10, 0), pady=5)
 
+        # Number of rolls (continuous mode)
+        self.rolls_label = tk.Label(
+            right_frame, text="Number of Rolls:",
+            bg='#1a0f2e', fg='white', font=('Arial', 9)
+        )
+        self.rolls_label.grid(row=4, column=0, sticky='w', pady=5)
+        self.rolls_var = tk.StringVar(value="1000")
+        self.rolls_entry = tk.Entry(
+            right_frame, textvariable=self.rolls_var,
+            width=15, font=('Arial', 9)
+        )
+        self.rolls_entry.grid(row=4, column=1, sticky='w', padx=(10, 0), pady=5)
+
+        # Session parameters (session mode - initially hidden)
+        self.shooters_label = tk.Label(
+            right_frame, text="Shooters/Session:",
+            bg='#1a0f2e', fg='white', font=('Arial', 9)
+        )
+        self.shooters_var = tk.StringVar(value="5")
+        self.shooters_entry = tk.Entry(
+            right_frame, textvariable=self.shooters_var,
+            width=15, font=('Arial', 9)
+        )
+
+        self.sessions_label = tk.Label(
+            right_frame, text="Number of Sessions:",
+            bg='#1a0f2e', fg='white', font=('Arial', 9)
+        )
+        self.sessions_var = tk.StringVar(value="100")
+        self.sessions_entry = tk.Entry(
+            right_frame, textvariable=self.sessions_var,
+            width=15, font=('Arial', 9)
+        )
+
         # Random seed
-        tk.Label(
+        self.seed_label = tk.Label(
             right_frame, text="Random Seed (optional):",
             bg='#1a0f2e', fg='white', font=('Arial', 9)
-        ).grid(row=4, column=0, sticky='w', pady=5)
+        )
+        self.seed_label.grid(row=7, column=0, sticky='w', pady=5)
         self.seed_var = tk.StringVar(value="")
-        tk.Entry(
+        self.seed_entry = tk.Entry(
             right_frame, textvariable=self.seed_var,
             width=15, font=('Arial', 9)
-        ).grid(row=4, column=1, sticky='w', padx=(10, 0), pady=5)
+        )
+        self.seed_entry.grid(row=7, column=1, sticky='w', padx=(10, 0), pady=5)
 
         # Run button
         tk.Button(
             right_frame, text="Run Test", font=('Arial', 12, 'bold'),
             bg='#cc0000', fg='white', command=self._run_test,
             width=15, height=2, relief=tk.RAISED, bd=3
-        ).grid(row=5, column=0, columnspan=2, pady=15)
+        ).grid(row=8, column=0, columnspan=2, pady=15)
+
+        # Store right_frame reference for mode switching
+        self.right_frame = right_frame
 
         # Middle: Results table
         results_frame = tk.LabelFrame(
@@ -163,24 +216,13 @@ class StrategyTestWindow:
         )
         results_frame.pack(fill=tk.X, padx=10, pady=10)
 
-        # Treeview table
-        columns = ("strategy", "final", "net", "roi")
+        # Treeview table - will be reconfigured based on mode
         self.results_tree = ttk.Treeview(
             results_frame,
-            columns=columns,
             show="headings",
             height=5
         )
-        self.results_tree.heading("strategy", text="Strategy")
-        self.results_tree.heading("final", text="Final Equity")
-        self.results_tree.heading("net", text="Net Change")
-        self.results_tree.heading("roi", text="ROI %")
-
-        self.results_tree.column("strategy", width=200)
-        self.results_tree.column("final", width=150, anchor='e')
-        self.results_tree.column("net", width=150, anchor='e')
-        self.results_tree.column("roi", width=150, anchor='e')
-
+        self._configure_results_columns_continuous()
         self.results_tree.pack(fill=tk.X, padx=5, pady=5)
 
         # Bind selection to show detailed stats
@@ -201,7 +243,7 @@ class StrategyTestWindow:
         right_stats = tk.Frame(stats_frame, bg='#1a0f2e')
         right_stats.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        # Left column stats
+        # Left column stats (continuous mode)
         self.stats_rolls_label = tk.Label(
             left_stats, text="Total Rolls: --",
             bg='#1a0f2e', fg='white', font=('Arial', 9), anchor='w'
@@ -219,6 +261,12 @@ class StrategyTestWindow:
             bg='#1a0f2e', fg='#00ff00', font=('Arial', 9), anchor='w'
         )
         self.stats_points_label.pack(fill=tk.X, pady=2)
+
+        self.stats_house_edge_label = tk.Label(
+            left_stats, text="House Edge: --",
+            bg='#1a0f2e', fg='#ffa500', font=('Arial', 9), anchor='w'
+        )
+        self.stats_house_edge_label.pack(fill=tk.X, pady=2)
 
         # Right column stats
         self.stats_sevenouts_label = tk.Label(
@@ -239,11 +287,31 @@ class StrategyTestWindow:
         )
         self.stats_avg_label.pack(fill=tk.X, pady=2)
 
-        # Roll distribution text
-        tk.Label(
+        self.stats_winrate_label = tk.Label(
+            right_stats, text="Win Rate: --",
+            bg='#1a0f2e', fg='#00ff00', font=('Arial', 9), anchor='w'
+        )
+        self.stats_winrate_label.pack(fill=tk.X, pady=2)
+
+        # Action breakdown (for both modes)
+        self.action_label_header = tk.Label(
+            stats_frame, text="Action by Bet Type:",
+            bg='#1a0f2e', fg='white', font=('Arial', 9, 'bold')
+        )
+        self.action_label_header.pack(anchor='w', pady=(10, 2))
+
+        self.action_label = tk.Label(
+            stats_frame, text="--",
+            bg='#1a0f2e', fg='#00aaff', font=('Courier', 8), anchor='w', justify=tk.LEFT
+        )
+        self.action_label.pack(fill=tk.X, pady=2)
+
+        # Roll distribution text (hidden in session mode)
+        self.distribution_header = tk.Label(
             stats_frame, text="Roll Distribution:",
             bg='#1a0f2e', fg='white', font=('Arial', 9, 'bold')
-        ).pack(anchor='w', pady=(10, 2))
+        )
+        self.distribution_header.pack(anchor='w', pady=(10, 2))
 
         self.distribution_label = tk.Label(
             stats_frame, text="--",
@@ -264,15 +332,93 @@ class StrategyTestWindow:
         self.graph_container = tk.Frame(graph_frame, bg='#1a0f2e')
         self.graph_container.pack(fill=tk.BOTH, expand=True)
 
+    def _on_mode_changed(self):
+        """Handle simulation mode change."""
+        mode = self.mode_var.get()
+        self.session_mode = (mode == 'session')
+
+        if self.session_mode:
+            # Hide continuous mode widgets
+            self.rolls_label.grid_remove()
+            self.rolls_entry.grid_remove()
+            # Show session mode widgets
+            self.shooters_label.grid(row=4, column=0, sticky='w', pady=5)
+            self.shooters_entry.grid(row=4, column=1, sticky='w', padx=(10, 0), pady=5)
+            self.sessions_label.grid(row=5, column=0, sticky='w', pady=5)
+            self.sessions_entry.grid(row=5, column=1, sticky='w', padx=(10, 0), pady=5)
+            # Update seed row
+            self.seed_label.grid(row=6, column=0, sticky='w', pady=5)
+            self.seed_entry.grid(row=6, column=1, sticky='w', padx=(10, 0), pady=5)
+        else:
+            # Hide session mode widgets
+            self.shooters_label.grid_remove()
+            self.shooters_entry.grid_remove()
+            self.sessions_label.grid_remove()
+            self.sessions_entry.grid_remove()
+            # Show continuous mode widgets
+            self.rolls_label.grid(row=4, column=0, sticky='w', pady=5)
+            self.rolls_entry.grid(row=4, column=1, sticky='w', padx=(10, 0), pady=5)
+            # Update seed row
+            self.seed_label.grid(row=7, column=0, sticky='w', pady=5)
+            self.seed_entry.grid(row=7, column=1, sticky='w', padx=(10, 0), pady=5)
+
+        # Reconfigure results table columns
+        if self.session_mode:
+            self._configure_results_columns_session()
+        else:
+            self._configure_results_columns_continuous()
+
+    def _configure_results_columns_continuous(self):
+        """Configure results table for continuous mode."""
+        # Clear existing columns
+        self.results_tree['columns'] = ("strategy", "final", "net", "roi", "house_edge")
+        for col in self.results_tree['columns']:
+            self.results_tree.heading(col, text="")
+
+        self.results_tree.heading("strategy", text="Strategy")
+        self.results_tree.heading("final", text="Final Equity")
+        self.results_tree.heading("net", text="Net Change")
+        self.results_tree.heading("roi", text="ROI %")
+        self.results_tree.heading("house_edge", text="House Edge")
+
+        self.results_tree.column("strategy", width=180)
+        self.results_tree.column("final", width=120, anchor='e')
+        self.results_tree.column("net", width=120, anchor='e')
+        self.results_tree.column("roi", width=100, anchor='e')
+        self.results_tree.column("house_edge", width=100, anchor='e')
+
+    def _configure_results_columns_session(self):
+        """Configure results table for session mode."""
+        self.results_tree['columns'] = ("strategy", "win_rate", "avg_net", "std_net", "house_edge")
+        for col in self.results_tree['columns']:
+            self.results_tree.heading(col, text="")
+
+        self.results_tree.heading("strategy", text="Strategy")
+        self.results_tree.heading("win_rate", text="Win Rate")
+        self.results_tree.heading("avg_net", text="Avg Session")
+        self.results_tree.heading("std_net", text="Std Dev")
+        self.results_tree.heading("house_edge", text="House Edge")
+
+        self.results_tree.column("strategy", width=180)
+        self.results_tree.column("win_rate", width=120, anchor='e')
+        self.results_tree.column("avg_net", width=120, anchor='e')
+        self.results_tree.column("std_net", width=100, anchor='e')
+        self.results_tree.column("house_edge", width=100, anchor='e')
+
     def _run_test(self):
         """Execute the strategy test."""
         # Parse configuration
         try:
             table_minimum = float(self.table_min_var.get())
             bankroll = float(self.bankroll_var.get())
-            num_rolls = int(self.rolls_var.get())
             seed_str = self.seed_var.get().strip()
             seed = int(seed_str) if seed_str else None
+
+            if self.session_mode:
+                shooters_per_session = int(self.shooters_var.get())
+                num_sessions = int(self.sessions_var.get())
+            else:
+                num_rolls = int(self.rolls_var.get())
         except ValueError:
             messagebox.showerror("Invalid Input", "Please check your parameter values")
             return
@@ -291,14 +437,26 @@ class StrategyTestWindow:
             return
 
         # Create config
-        config = SimulationConfig(
-            strategies=strategies,
-            num_rolls=num_rolls,
-            starting_bankroll=bankroll,
-            table_minimum=table_minimum,
-            table_rules=rules,
-            seed=seed
-        )
+        if self.session_mode:
+            config = SimulationConfig(
+                strategies=strategies,
+                starting_bankroll=bankroll,
+                table_minimum=table_minimum,
+                table_rules=rules,
+                seed=seed,
+                session_mode=True,
+                shooters_per_session=shooters_per_session,
+                num_sessions=num_sessions
+            )
+        else:
+            config = SimulationConfig(
+                strategies=strategies,
+                num_rolls=num_rolls,
+                starting_bankroll=bankroll,
+                table_minimum=table_minimum,
+                table_rules=rules,
+                seed=seed
+            )
 
         # Show busy cursor (try watch, fall back to default if not available)
         try:
@@ -308,17 +466,36 @@ class StrategyTestWindow:
         self.window.update()
 
         try:
-            # Run simulation
-            runner = StrategyRunner(config)
-            self.results = runner.run()
+            if self.session_mode:
+                # Run session-based simulation
+                session_runner = SessionRunner(config)
+                self.session_results = session_runner.run()
+                self.results = None
 
-            # Update results table
-            self._update_results_table()
+                # Update results table for session mode
+                self._update_results_table_session()
 
-            # Draw comparison graph
-            self._draw_comparison_graph()
+                # Draw session comparison graph
+                self._draw_session_graph()
 
-            messagebox.showinfo("Success", f"Test completed! Ran {num_rolls} rolls across {len(strategies)} strategies.")
+                messagebox.showinfo(
+                    "Success",
+                    f"Test completed! Ran {num_sessions} sessions ({shooters_per_session} shooters each) "
+                    f"across {len(strategies)} strategies."
+                )
+            else:
+                # Run continuous simulation
+                runner = StrategyRunner(config)
+                self.results = runner.run()
+                self.session_results = None
+
+                # Update results table
+                self._update_results_table()
+
+                # Draw comparison graph
+                self._draw_comparison_graph()
+
+                messagebox.showinfo("Success", f"Test completed! Ran {num_rolls} rolls across {len(strategies)} strategies.")
 
         except Exception as e:
             messagebox.showerror("Error", f"Test failed: {str(e)}")
@@ -332,7 +509,7 @@ class StrategyTestWindow:
                 pass
 
     def _update_results_table(self):
-        """Update the results tree with data."""
+        """Update the results tree with data (continuous mode)."""
         # Clear existing
         for item in self.results_tree.get_children():
             self.results_tree.delete(item)
@@ -345,7 +522,8 @@ class StrategyTestWindow:
                     result.strategy_name,
                     f"${result.final_equity:.2f}",
                     f"${result.net_change:+.2f}",
-                    f"{result.roi_percent:+.2f}%"
+                    f"{result.roi_percent:+.2f}%",
+                    f"{result.weighted_house_edge:.2f}%"
                 )
             )
 
@@ -355,17 +533,45 @@ class StrategyTestWindow:
             self.results_tree.selection_set(first_item)
             self._update_detailed_stats(0)
 
+    def _update_results_table_session(self):
+        """Update the results tree with data (session mode)."""
+        # Clear existing
+        for item in self.results_tree.get_children():
+            self.results_tree.delete(item)
+
+        # Add results
+        for result in self.session_results:
+            win_rate = f"{result.winning_sessions}/{result.total_sessions}"
+            self.results_tree.insert(
+                "", tk.END,
+                values=(
+                    result.strategy_name,
+                    win_rate,
+                    f"${result.avg_session_net:+.2f}",
+                    f"${result.std_session_net:.2f}",
+                    f"{result.weighted_house_edge:.2f}%"
+                )
+            )
+
+        # Auto-select first result
+        if self.session_results:
+            first_item = self.results_tree.get_children()[0]
+            self.results_tree.selection_set(first_item)
+            self._update_detailed_stats_session(0)
+
     def _on_strategy_selected(self, event):
         """Handle strategy selection in results tree."""
         selection = self.results_tree.selection()
-        if selection and self.results:
-            # Get index of selected item
+        if selection:
             item = selection[0]
             index = self.results_tree.index(item)
-            self._update_detailed_stats(index)
+            if self.session_mode and self.session_results:
+                self._update_detailed_stats_session(index)
+            elif self.results:
+                self._update_detailed_stats(index)
 
     def _update_detailed_stats(self, result_index: int):
-        """Update the detailed statistics panel for a specific result."""
+        """Update the detailed statistics panel for a specific result (continuous mode)."""
         if not self.results or result_index >= len(self.results):
             return
 
@@ -381,6 +587,7 @@ class StrategyTestWindow:
 
         self.stats_shooters_label.config(text=f"Total Shooters: {result.total_shooters}")
         self.stats_points_label.config(text=f"Points Hit: {result.points_hit}")
+        self.stats_house_edge_label.config(text=f"House Edge: {result.weighted_house_edge:.2f}%")
         self.stats_sevenouts_label.config(text=f"Seven-Outs: {result.seven_outs}")
         self.stats_longest_label.config(text=f"Longest Roll: {result.longest_roll}")
 
@@ -388,9 +595,84 @@ class StrategyTestWindow:
         avg_rolls = result.total_rolls / result.total_shooters if result.total_shooters > 0 else 0
         self.stats_avg_label.config(text=f"Avg Rolls/Shooter: {avg_rolls:.1f}")
 
-        # Format roll distribution as histogram
+        # Win rate not applicable in continuous mode
+        self.stats_winrate_label.config(text="Win Rate: N/A")
+
+        # Format action breakdown
+        action_text = self._format_action_breakdown(result.action_by_bet_type)
+        self.action_label.config(text=action_text)
+
+        # Show roll distribution
+        self.distribution_header.pack(anchor='w', pady=(10, 2))
+        self.distribution_label.pack(fill=tk.X, pady=2)
         dist_text = self._format_distribution(result.roll_distribution, result.total_rolls)
         self.distribution_label.config(text=dist_text)
+
+    def _update_detailed_stats_session(self, result_index: int):
+        """Update the detailed statistics panel for a specific result (session mode)."""
+        if not self.session_results or result_index >= len(self.session_results):
+            return
+
+        result = self.session_results[result_index]
+
+        # Calculate aggregate stats across all sessions
+        total_rolls = sum(s.num_rolls for s in result.sessions)
+        total_shooters = sum(s.num_shooters for s in result.sessions)
+        total_points = sum(s.points_made for s in result.sessions)
+        total_sevenouts = sum(s.seven_outs for s in result.sessions)
+
+        self.stats_rolls_label.config(text=f"Total Rolls: {total_rolls}", fg='white')
+        self.stats_shooters_label.config(text=f"Total Shooters: {total_shooters}")
+        self.stats_points_label.config(text=f"Points Made: {total_points}")
+        self.stats_house_edge_label.config(text=f"House Edge: {result.weighted_house_edge:.2f}%")
+        self.stats_sevenouts_label.config(text=f"Seven-Outs: {total_sevenouts}")
+
+        # Session stats - show range
+        self.stats_longest_label.config(
+            text=f"Range: ${result.min_session_net:+.0f} to ${result.max_session_net:+.0f}"
+        )
+        avg_rolls = total_rolls / total_shooters if total_shooters > 0 else 0
+        self.stats_avg_label.config(text=f"Avg Rolls/Shooter: {avg_rolls:.1f}")
+
+        # Win rate
+        win_pct = (result.winning_sessions / result.total_sessions * 100) if result.total_sessions > 0 else 0
+        self.stats_winrate_label.config(text=f"Win Rate: {win_pct:.1f}%")
+
+        # Format percentile breakdown instead of action
+        percentile_text = self._format_percentile_breakdown(result)
+        self.action_label_header.config(text="Session Percentiles:")
+        self.action_label.config(text=percentile_text)
+
+        # Hide roll distribution in session mode
+        self.distribution_header.pack_forget()
+        self.distribution_label.pack_forget()
+
+    def _format_percentile_breakdown(self, result) -> str:
+        """Format percentile breakdown as text."""
+        lines = [
+            f"10th (Unlucky):  ${result.percentile_10:+.2f}",
+            f"25th:            ${result.percentile_25:+.2f}",
+            f"50th (Median):   ${result.median_session_net:+.2f}",
+            f"75th:            ${result.percentile_75:+.2f}",
+            f"90th (Lucky):    ${result.percentile_90:+.2f}",
+            f"",
+            f"Average:         ${result.avg_session_net:+.2f}",
+            f"Std Dev:         ${result.std_session_net:.2f}",
+        ]
+        return '\n'.join(lines)
+
+    def _format_action_breakdown(self, action_by_bet_type: dict) -> str:
+        """Format action breakdown as text."""
+        if not action_by_bet_type:
+            return "No bets placed"
+
+        total_action = sum(action_by_bet_type.values())
+        lines = []
+        for bet_type, amount in sorted(action_by_bet_type.items(), key=lambda x: -x[1]):
+            pct = (amount / total_action * 100) if total_action > 0 else 0
+            lines.append(f"{bet_type}: ${amount:,.0f} ({pct:.1f}%)")
+
+        return '\n'.join(lines)
 
     def _format_distribution(self, distribution: dict[int, int], total_rolls: int) -> str:
         """Format roll distribution as a text histogram."""
@@ -479,6 +761,99 @@ class StrategyTestWindow:
 
         # Adjust layout to prevent legend cutoff
         self.fig.subplots_adjust(right=0.82)
+
+        # Embed in tkinter
+        self.canvas = FigureCanvasTkAgg(self.fig, master=self.graph_container)
+        self.canvas.draw()
+        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+    def _draw_session_graph(self):
+        """Draw session analysis: histogram and percentile comparison."""
+        try:
+            import matplotlib.pyplot as plt
+            from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+            import numpy as np
+        except ImportError:
+            messagebox.showerror("Error", "matplotlib is required for graphs.\nInstall with: pip install matplotlib")
+            return
+
+        # Clear previous graph
+        for widget in self.graph_container.winfo_children():
+            widget.destroy()
+
+        # Create figure with two subplots
+        self.fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10.5, 4.5), facecolor='#1a0f2e')
+        ax1.set_facecolor('#2d1b4e')
+        ax2.set_facecolor('#2d1b4e')
+
+        colors = ['#ffd700', '#00ff00', '#ff4444', '#00aaff', '#ff00ff']
+
+        # Left plot: Session outcome distribution (histogram)
+        for i, result in enumerate(self.session_results):
+            color = colors[i % len(colors)]
+            session_nets = [s.net_change for s in result.sessions]
+            ax1.hist(
+                session_nets,
+                bins=20,
+                alpha=0.6,
+                color=color,
+                label=result.strategy_name,
+                edgecolor='white',
+                linewidth=0.5
+            )
+
+        ax1.axvline(x=0, color='white', linestyle='--', linewidth=1, alpha=0.7)
+        ax1.set_xlabel('Session Net Change ($)', color='white', fontsize=9)
+        ax1.set_ylabel('Frequency', color='white', fontsize=9)
+        ax1.set_title('Session Outcome Distribution', color='white', fontsize=10)
+        ax1.tick_params(colors='white')
+        ax1.legend(facecolor='#2d1b4e', labelcolor='white', fontsize=8)
+        ax1.grid(True, alpha=0.3, color='white', linestyle=':', linewidth=0.5)
+        for spine in ax1.spines.values():
+            spine.set_color('white')
+
+        # Right plot: Percentile comparison (what different luck levels experience)
+        n_strategies = len(self.session_results)
+        x = np.arange(5)  # 5 percentile points: 10, 25, 50, 75, 90
+        width = 0.8 / n_strategies
+
+        for i, result in enumerate(self.session_results):
+            color = colors[i % len(colors)]
+            percentiles = [
+                result.percentile_10,
+                result.percentile_25,
+                result.median_session_net,
+                result.percentile_75,
+                result.percentile_90
+            ]
+            offset = (i - n_strategies / 2 + 0.5) * width
+            bars = ax2.bar(x + offset, percentiles, width, label=result.strategy_name,
+                          color=color, alpha=0.8, edgecolor='white', linewidth=0.5)
+
+            # Add value labels on bars
+            for bar, val in zip(bars, percentiles):
+                height = bar.get_height()
+                ax2.annotate(f'${val:+.0f}',
+                           xy=(bar.get_x() + bar.get_width() / 2, height),
+                           xytext=(0, 3 if height >= 0 else -10),
+                           textcoords="offset points",
+                           ha='center', va='bottom' if height >= 0 else 'top',
+                           fontsize=7, color='white')
+
+        ax2.axhline(y=0, color='white', linestyle='-', linewidth=0.5, alpha=0.5)
+        ax2.set_xticks(x)
+        ax2.set_xticklabels(['10th\n(Unlucky)', '25th', '50th\n(Median)', '75th', '90th\n(Lucky)'],
+                           fontsize=8)
+        ax2.set_xlabel('Percentile', color='white', fontsize=9)
+        ax2.set_ylabel('Session Net Change ($)', color='white', fontsize=9)
+        ax2.set_title('Session Results by Luck Percentile', color='white', fontsize=10)
+        ax2.tick_params(colors='white')
+        ax2.legend(facecolor='#2d1b4e', labelcolor='white', fontsize=8, loc='upper left')
+        ax2.grid(True, alpha=0.3, color='white', linestyle=':', linewidth=0.5, axis='y')
+        for spine in ax2.spines.values():
+            spine.set_color('white')
+
+        self.fig.tight_layout()
 
         # Embed in tkinter
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.graph_container)

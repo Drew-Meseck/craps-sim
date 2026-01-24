@@ -55,6 +55,12 @@ class ShooterRecord:
     bankroll_start: float = 0.0
     bankroll_end: float = 0.0
     rolls: list[RollRecord] = field(default_factory=list)
+    # Enhanced tracking
+    points_established: int = 0
+    points_made: int = 0
+    seven_outs: int = 0  # 0 or 1 (ends shooter)
+    bets_won: list[tuple[str, float]] = field(default_factory=list)   # (bet_name, payout)
+    bets_lost: list[tuple[str, float]] = field(default_factory=list)  # (bet_name, amount_lost)
 
     @property
     def net_change(self) -> float:
@@ -70,6 +76,26 @@ class ShooterRecord:
     def is_complete(self) -> bool:
         """True if shooter has sevened out."""
         return self.end_roll is not None
+
+    @property
+    def total_won(self) -> float:
+        """Total amount won during this shooter."""
+        return sum(payout for _, payout in self.bets_won)
+
+    @property
+    def total_lost(self) -> float:
+        """Total amount lost during this shooter."""
+        return sum(amount for _, amount in self.bets_lost)
+
+    @property
+    def bets_won_count(self) -> int:
+        """Number of bets won."""
+        return len(self.bets_won)
+
+    @property
+    def bets_lost_count(self) -> int:
+        """Number of bets lost."""
+        return len(self.bets_lost)
 
 
 class BankrollTracker:
@@ -144,9 +170,36 @@ class BankrollTracker:
         """End the current shooter's session."""
         if self.current_shooter:
             self.current_shooter.end_roll = self._roll_count
+            if seven_out:
+                self.current_shooter.seven_outs = 1
             self.shooter_history.append(self.current_shooter)
             # Start new shooter
             self._start_new_shooter(self.current_bankroll)
+
+    def record_bet_result(self, bet_name: str, won: bool, amount: float):
+        """Record a bet result for the current shooter."""
+        if self.current_shooter:
+            if won:
+                self.current_shooter.bets_won.append((bet_name, amount))
+            else:
+                self.current_shooter.bets_lost.append((bet_name, amount))
+
+    def record_point_established(self):
+        """Record that a point was established."""
+        if self.current_shooter:
+            self.current_shooter.points_established += 1
+
+    def record_point_made(self):
+        """Record that the point was made."""
+        if self.current_shooter:
+            self.current_shooter.points_made += 1
+
+    def get_all_shooter_records(self) -> list[ShooterRecord]:
+        """Get all completed shooter records plus current shooter if any."""
+        records = list(self.shooter_history)
+        if self.current_shooter and self.current_shooter.rolls:
+            records.append(self.current_shooter)
+        return records
 
     def get_session_stats(self) -> dict:
         """Get statistics for the current session."""
